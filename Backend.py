@@ -4,6 +4,7 @@ from langchain_core.messages import BaseMessage
 from langchain_groq import ChatGroq
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.message import add_messages
+from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +28,15 @@ graph.add_edge(START, "chat_node")
 graph.add_edge("chat_node", END)
 
 chatbot = graph.compile(checkpointer=checkpointer)
+
+# CONFIG = {"configurable":{"thread_id":"thread-1"}}
+
+# response = chatbot.invoke(
+#     {"messages": [HumanMessage(content="Waht is moon in india!")]},
+#     config = CONFIG,
+# )
+
+# print(chatbot.get_state(config=CONFIG).values["messages"])
 
 
 
