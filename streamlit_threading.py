@@ -1,139 +1,99 @@
 import streamlit as st
 from Backend import chatbot
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 import uuid
 
+# **************************************** utility functions *************************
 
 def generate_thread_id():
-    return str(uuid.uuid4())
-
-
-def add_thread(thread_id, thread_title="New Chat"):
-    for thread in st.session_state["chat_threads"]:
-        if thread["thread_id"] == thread_id:
-            return
-
-    st.session_state["chat_threads"].append({
-        "thread_id": thread_id,
-        "thread_title": thread_title
-    })
-
+    thread_id = uuid.uuid4()
+    return thread_id
 
 def reset_chat():
-    new_thread_id = generate_thread_id()
+    thread_id = generate_thread_id()
+    st.session_state['thread_id'] = thread_id
+    add_thread(st.session_state['thread_id'])
+    st.session_state['message_history'] = []
 
-    st.session_state["thread_id"] = new_thread_id
-    st.session_state["message_history"] = []
-
-    add_thread(new_thread_id, "New Chat")
-
+def add_thread(thread_id):
+    if thread_id not in st.session_state['chat_threads']:
+        st.session_state['chat_threads'].append(thread_id)
 
 def load_conversation(thread_id):
-    state = chatbot.get_state(
-        config={"configurable": {"thread_id": thread_id}}
-    )
-    return state.values.get("messages", [])
+    state = chatbot.get_state(config={'configurable': {'thread_id': thread_id}})
+    # Check if messages key exists in state values, return empty list if not
+    return state.values.get('messages', [])
 
 
-def update_thread_title(thread_id, title):
-    for thread in st.session_state["chat_threads"]:
-        if thread["thread_id"] == thread_id:
-            if thread["thread_title"] == "New Chat":
-                thread["thread_title"] = title[:40]
-            return
+# **************************************** Session Setup ******************************
+if 'message_history' not in st.session_state:
+    st.session_state['message_history'] = []
+
+if 'thread_id' not in st.session_state:
+    st.session_state['thread_id'] = generate_thread_id()
+
+if 'chat_threads' not in st.session_state:
+    st.session_state['chat_threads'] = []
+
+add_thread(st.session_state['thread_id'])
 
 
-# ---------------- Session State ----------------
+# **************************************** Sidebar UI *********************************
 
-if "message_history" not in st.session_state:
-    st.session_state["message_history"] = []
+st.sidebar.title('LangGraph Chatbot')
 
-if "thread_id" not in st.session_state:
-    st.session_state["thread_id"] = generate_thread_id()
-
-if "chat_threads" not in st.session_state:
-    st.session_state["chat_threads"] = []
-
-add_thread(st.session_state["thread_id"], "New Chat")
-
-CONFIG = {
-    "configurable": {
-        "thread_id": st.session_state["thread_id"]
-    }
-}
-
-# ---------------- Sidebar ----------------
-
-st.sidebar.title("LangGraph Chatbot")
-
-if st.sidebar.button("➕ New Chat"):
+if st.sidebar.button('New Chat'):
     reset_chat()
-    st.rerun()
 
-st.sidebar.header("My Conversations")
+st.sidebar.header('My Conversations')
 
-for thread in st.session_state["chat_threads"][::-1]:
-
-    if st.sidebar.button(
-        thread["thread_title"],
-        key=thread["thread_id"]
-    ):
-
-        st.session_state["thread_id"] = thread["thread_id"]
-
-        messages = load_conversation(thread["thread_id"])
+for thread_id in st.session_state['chat_threads'][::-1]:
+    if st.sidebar.button(str(thread_id)):
+        st.session_state['thread_id'] = thread_id
+        messages = load_conversation(thread_id)
 
         temp_messages = []
 
         for msg in messages:
-
             if isinstance(msg, HumanMessage):
-                temp_messages.append({
-                    "role": "user",
-                    "content": msg.content
-                })
+                role='user'
             else:
-                temp_messages.append({
-                    "role": "assistant",
-                    "content": msg.content
-                })
+                role='assistant'
+            temp_messages.append({'role': role, 'content': msg.content})
 
-        st.session_state["message_history"] = temp_messages
-        st.rerun()
+        st.session_state['message_history'] = temp_messages
 
 
-for msg in st.session_state["message_history"]:
-    with st.chat_message(msg["role"]):
-        st.text(msg["content"])
+# **************************************** Main UI ************************************
 
+# loading the conversation history
+for message in st.session_state['message_history']:
+    with st.chat_message(message['role']):
+        st.text(message['content'])
 
-
-#{"role": "user", "content": "Hello!"}
-#{"role": "assistant", "content": "Hello!"}
-
-user_input = st.chat_input("Enter your text here")
+user_input = st.chat_input('Type here')
 
 if user_input:
 
-    update_thread_title(st.session_state["thread_id"], user_input)
-
-    st.session_state["message_history"].append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
+    # first add the message to message_history
+    st.session_state['message_history'].append({'role': 'user', 'content': user_input})
+    with st.chat_message('user'):
         st.text(user_input)
 
-    #st.session_state["message_history"].append({"role": "assistant", "content": ai_message})
+    CONFIG = {'configurable': {'thread_id': st.session_state['thread_id']}}
+
+     # first add the message to message_history
     with st.chat_message("assistant"):
-        ai_message = st.write_stream(
-            message_chunk.content for message_chunk,metadata in chatbot.stream(
+        def ai_only_stream():
+            for message_chunk, metadata in chatbot.stream(
                 {"messages": [HumanMessage(content=user_input)]},
                 config=CONFIG,
                 stream_mode="messages"
-            )
-        )
+            ):
+                if isinstance(message_chunk, AIMessage):
+                    # yield only assistant tokens
+                    yield message_chunk.content
 
-    st.session_state["message_history"].append({"role": "assistant", "content": ai_message})
-        
+        ai_message = st.write_stream(ai_only_stream())
 
-    
-
-    
+    st.session_state['message_history'].append({'role': 'assistant', 'content': ai_message})
